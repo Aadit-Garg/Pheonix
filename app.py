@@ -1,22 +1,21 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, send_from_directory
 from datetime import datetime
 import json
 import random
-import time
 import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 
-# Render-specific configuration
+# Vercel-specific configuration
 app.config.update(
-    SECRET_KEY=os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production'),
+    SECRET_KEY=os.environ.get('SECRET_KEY', 'vercel-secret-key-change-in-production'),
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    PREFERRED_URL_SCHEME='https'  # Force HTTPS on Render
+    PREFERRED_URL_SCHEME='https'
 )
 
-# Mock database (your existing code)
+# Your existing database class (keep it exactly as before)
 class SafetyDatabase:
     def __init__(self):
         self.incidents = []
@@ -42,6 +41,18 @@ class SafetyDatabase:
             }
         }
         self.initialize_safety_scores()
+        self.products = [
+            {
+                'id': 1,
+                'name': 'Smart Safety Bracelet',
+                'description': 'Waterproof bracelet with SOS button and GPS tracking',
+                'price': 1299,
+                'category': 'wearables',
+                'features': ['SOS Button', 'GPS Tracking', 'Waterproof', '30-day battery'],
+                'icon': 'heartbeat'
+            },
+            # ... add other products
+        ]
     
     def initialize_safety_scores(self):
         campus_locations = {
@@ -84,7 +95,7 @@ class SafetyDatabase:
 # Initialize database
 db = SafetyDatabase()
 
-# Your existing routes (keep all of them exactly as they are)
+# Your existing routes (keep ALL routes exactly as they are)
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -149,26 +160,13 @@ def profile():
 
 @app.route('/shop')
 def shop():
-    # Add products data here or import from your existing code
-    products = [
-        {
-            'id': 1,
-            'name': 'Smart Safety Bracelet',
-            'description': 'Waterproof bracelet with SOS button and GPS tracking',
-            'price': 1299,
-            'category': 'wearables',
-            'features': ['SOS Button', 'GPS Tracking', 'Waterproof', '30-day battery'],
-            'icon': 'heartbeat'
-        },
-        # ... add other products
-    ]
-    return render_template('shop.html', products=products)
+    return render_template('shop.html', products=db.products)
 
 @app.route('/safewalk')
 def safewalk():
     return render_template('safewalk.html')
 
-# API Routes (keep all your existing API routes)
+# API Routes (keep ALL your existing API routes)
 @app.route('/api/trigger-emergency', methods=['POST'])
 def trigger_emergency():
     data = request.json
@@ -191,16 +189,80 @@ def trigger_emergency():
         'response_time_estimate': '45 seconds'
     })
 
-# ... include ALL your other API routes exactly as they are
+@app.route('/api/cancel-emergency', methods=['POST'])
+def cancel_emergency():
+    data = request.json
+    # Your existing cancel emergency logic
+    return jsonify({'status': 'success', 'message': 'Emergency cancelled'})
 
-# Health check endpoint for Render
+@app.route('/api/voice-command', methods=['POST'])
+def process_voice_command():
+    data = request.json
+    command = data.get('command', '').lower()
+    
+    # Your existing voice command logic
+    emergency_keywords = ['help', 'emergency', 'sos', 'save me', 'danger']
+    
+    if any(keyword in command for keyword in emergency_keywords):
+        emergency_data = {
+            'user_id': 'user123',
+            'type': 'voice_emergency',
+            'source': 'voice',
+            'voice_command': command
+        }
+        emergency_id = db.add_emergency(emergency_data)
+        return jsonify({
+            'status': 'emergency_triggered',
+            'action': 'emergency',
+            'emergency_id': emergency_id,
+            'message': 'Emergency alert activated via voice command!'
+        })
+    
+    return jsonify({'status': 'command_processed', 'command': command})
+
+@app.route('/api/report-incident', methods=['POST'])
+def report_incident_api():
+    data = request.json
+    incident_id = db.add_incident(data)
+    return jsonify({'status': 'success', 'incident_id': incident_id})
+
+@app.route('/api/start-safewalk', methods=['POST'])
+def start_safewalk():
+    data = request.json
+    safewalk_data = {
+        'user_id': data.get('user_id', 'user123'),
+        'start_location': data.get('start_location'),
+        'end_location': data.get('end_location'),
+        'start_time': datetime.now().isoformat(),
+        'status': 'active',
+        'safewalk_id': 'SW_' + str(random.randint(1000, 9999))
+    }
+    return jsonify({'status': 'success', 'safewalk_data': safewalk_data})
+
+@app.route('/api/get-location')
+def get_location():
+    base_lat, base_lng = 28.6129, 77.2295
+    location = {
+        'lat': base_lat + (random.random() - 0.5) * 0.001,
+        'lng': base_lng + (random.random() - 0.5) * 0.001,
+        'accuracy': random.randint(5, 15),
+        'timestamp': datetime.now().isoformat()
+    }
+    return jsonify(location)
+
+# Health check endpoint
 @app.route('/health')
 def health_check():
     return jsonify({
         'status': 'healthy', 
         'service': 'Phoenix Safety App',
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'environment': 'Vercel'
     })
+
+@app.route('/static/<path:path>')
+def serve_static(path):
+    return send_from_directory('static', path)
 
 # Error handlers
 @app.errorhandler(404)
@@ -211,7 +273,7 @@ def not_found(error):
 def internal_error(error):
     return render_template('500.html'), 500
 
+
+# This is important for Vercel - don't use app.run()
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))  # Render uses port 10000
-    debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    app.run(debug=True)
