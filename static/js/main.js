@@ -1,18 +1,20 @@
-// Phoenix Safety App - Enhanced Main JavaScript
+// Phoenix Safety App - Enhanced with Microphone Permissions
 class PhoenixSafetyApp {
     constructor() {
         this.isListening = false;
         this.recognition = null;
+        this.microphoneAccess = false;
         this.emergencyKeywords = ['help', 'emergency', 'sos', 'save me', 'danger', 'help me', 'security'];
         this.init();
     }
 
     init() {
-        this.initVoiceRecognition();
-        this.initShakeDetection();
-        this.initConnectionMonitoring();
         this.setupEventListeners();
+        this.initConnectionMonitoring();
         console.log('Phoenix Safety App initialized');
+        
+        // Request microphone permission on app start
+        this.requestMicrophonePermission();
     }
 
     setupEventListeners() {
@@ -32,13 +34,103 @@ class PhoenixSafetyApp {
                 });
             }
         });
+
+        // Voice command buttons
+        const voiceCommandBtn = document.getElementById('voiceCommand');
+        if (voiceCommandBtn) {
+            voiceCommandBtn.addEventListener('click', () => {
+                this.startVoiceCommand();
+            });
+        }
+
+        const voiceEmergencyBtn = document.getElementById('voiceEmergency');
+        if (voiceEmergencyBtn) {
+            voiceEmergencyBtn.addEventListener('click', () => {
+                this.startVoiceCommand();
+            });
+        }
+    }
+
+    async requestMicrophonePermission() {
+        try {
+            // Check if browser supports microphone access
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                this.showMicrophoneMessage('Microphone access not supported in this browser');
+                return false;
+            }
+
+            // Try to get microphone permission
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: true,
+                video: false 
+            });
+            
+            // Stop the stream immediately (we just needed permission)
+            stream.getTracks().forEach(track => track.stop());
+            
+            this.microphoneAccess = true;
+            this.showMicrophoneMessage('Microphone access granted ✅', 'success');
+            this.initVoiceRecognition();
+            
+            return true;
+            
+        } catch (error) {
+            console.log('Microphone permission denied:', error);
+            this.microphoneAccess = false;
+            
+            if (error.name === 'NotAllowedError') {
+                this.showMicrophoneMessage('Microphone access is required for voice commands. Please allow microphone permissions.', 'error');
+            } else if (error.name === 'NotFoundError') {
+                this.showMicrophoneMessage('No microphone found on this device', 'error');
+            } else {
+                this.showMicrophoneMessage('Cannot access microphone: ' + error.message, 'error');
+            }
+            
+            return false;
+        }
+    }
+
+    showMicrophoneMessage(message, type = 'info') {
+        // Remove existing message
+        const existingMsg = document.getElementById('microphonePermissionMessage');
+        if (existingMsg) {
+            existingMsg.remove();
+        }
+
+        // Create new message
+        const messageDiv = document.createElement('div');
+        messageDiv.id = 'microphonePermissionMessage';
+        messageDiv.className = `fixed top-20 left-1/2 transform -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg max-w-sm text-center ${
+            type === 'success' ? 'bg-green-500 text-white' :
+            type === 'error' ? 'bg-red-500 text-white' :
+            'bg-blue-500 text-white'
+        }`;
+        messageDiv.innerHTML = `
+            <div class="flex items-center justify-center">
+                ${type === 'success' ? '✅' : type === 'error' ? '❌' : '🎤'}
+                <span class="ml-2 text-sm font-medium">${message}</span>
+            </div>
+        `;
+
+        document.body.appendChild(messageDiv);
+
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                messageDiv.remove();
+            }
+        }, 5000);
     }
 
     initVoiceRecognition() {
+        if (!this.microphoneAccess) {
+            console.log('Microphone access not granted, skipping voice recognition');
+            return;
+        }
+
         // Check browser compatibility
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            console.log('Speech recognition not supported in this browser');
-            this.showCompatibilityMessage();
+            this.showVoiceFeedback('Voice commands not supported in this browser');
             return;
         }
 
@@ -53,7 +145,7 @@ class PhoenixSafetyApp {
 
             this.recognition.onstart = () => {
                 this.isListening = true;
-                this.showVoiceFeedback('Listening... Speak now');
+                this.showVoiceFeedback('🎤 Listening... Speak now');
                 console.log('Voice recognition started');
             };
 
@@ -66,10 +158,14 @@ class PhoenixSafetyApp {
             this.recognition.onerror = (event) => {
                 console.log('Speech recognition error:', event.error);
                 this.isListening = false;
-                this.showVoiceFeedback('Error listening. Try again.');
                 
                 if (event.error === 'not-allowed') {
-                    this.showVoiceFeedback('Microphone access denied. Please enable microphone permissions.');
+                    this.showVoiceFeedback('❌ Microphone access denied. Please allow microphone permissions in your browser settings.');
+                    this.microphoneAccess = false;
+                } else if (event.error === 'audio-capture') {
+                    this.showVoiceFeedback('❌ No microphone found. Please check your microphone connection.');
+                } else {
+                    this.showVoiceFeedback('❌ Error listening. Please try again.');
                 }
             };
 
@@ -81,26 +177,28 @@ class PhoenixSafetyApp {
             };
         } catch (error) {
             console.log('Error initializing speech recognition:', error);
-            this.showCompatibilityMessage();
-        }
-    }
-
-    showCompatibilityMessage() {
-        const voiceButton = document.getElementById('voiceButton');
-        if (voiceButton) {
-            voiceButton.title = "Voice commands not supported in this browser";
-            voiceButton.classList.add('opacity-50');
+            this.showVoiceFeedback('❌ Voice commands not available');
         }
     }
 
     startVoiceCommand() {
+        if (!this.microphoneAccess) {
+            this.showVoiceFeedback('🎤 Please allow microphone access first');
+            // Re-request permission
+            setTimeout(() => {
+                this.requestMicrophonePermission();
+            }, 1000);
+            return;
+        }
+
         if (!this.recognition) {
-            this.showVoiceFeedback('Voice commands not supported in your browser');
+            this.showVoiceFeedback('❌ Voice commands not supported');
             return;
         }
 
         if (this.isListening) {
             this.recognition.stop();
+            this.showVoiceFeedback('✅ Listening stopped');
             return;
         }
 
@@ -108,7 +206,7 @@ class PhoenixSafetyApp {
             this.recognition.start();
         } catch (error) {
             console.log('Error starting voice recognition:', error);
-            this.showVoiceFeedback('Error starting voice recognition');
+            this.showVoiceFeedback('❌ Error starting voice recognition');
         }
     }
 
@@ -118,7 +216,7 @@ class PhoenixSafetyApp {
         // Check for emergency keywords
         if (this.emergencyKeywords.some(keyword => lowerCommand.includes(keyword))) {
             console.log('🚨 EMERGENCY VOICE COMMAND DETECTED:', command);
-            this.showVoiceFeedback('Emergency detected! Activating SOS...');
+            this.showVoiceFeedback('🚨 Emergency detected! Activating SOS...');
             setTimeout(() => {
                 this.triggerEmergencySOS('voice_command');
             }, 1000);
@@ -126,7 +224,7 @@ class PhoenixSafetyApp {
         }
 
         // Process other commands via API
-        this.showVoiceFeedback(`Processing: "${command}"`);
+        this.showVoiceFeedback(`🔍 Processing: "${command}"`);
         
         fetch('/api/voice-command', {
             method: 'POST',
@@ -140,7 +238,7 @@ class PhoenixSafetyApp {
         .then(response => response.json())
         .then(data => {
             console.log('Voice command processed:', data);
-            this.showVoiceFeedback(data.message);
+            this.showVoiceFeedback('✅ ' + data.message);
             
             // Handle navigation actions
             if (data.action) {
@@ -151,7 +249,7 @@ class PhoenixSafetyApp {
         })
         .catch(error => {
             console.error('Error processing voice command:', error);
-            this.showVoiceFeedback('Network error. Please try again.');
+            this.showVoiceFeedback('❌ Network error. Please try again.');
         });
     }
 
@@ -182,9 +280,6 @@ class PhoenixSafetyApp {
         if (navigator.vibrate) {
             navigator.vibrate([200, 100, 200, 100, 200]);
         }
-
-        // Play emergency sound
-        this.playEmergencySound();
 
         // Get current location and send emergency alert
         this.getCurrentLocation()
@@ -224,110 +319,40 @@ class PhoenixSafetyApp {
             })
             .catch(error => {
                 console.error('Error sending emergency alert:', error);
-                // Fallback: Still show success even if network fails
-                this.showVoiceFeedback('Emergency alert activated!');
+                this.showVoiceFeedback('✅ Emergency alert activated!');
             });
-    }
-
-    playEmergencySound() {
-        // Create emergency beep sound using Web Audio API
-        try {
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
-            
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.3);
-        } catch (error) {
-            console.log('Audio context not supported:', error);
-        }
     }
 
     getCurrentLocation() {
-        // Try to get real location first
-        if (navigator.geolocation) {
-            return new Promise((resolve) => {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        resolve({
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude,
-                            accuracy: position.coords.accuracy,
-                            timestamp: new Date().toISOString()
-                        });
-                    },
-                    () => {
-                        // Fallback to mock location
-                        resolve(this.getMockLocation());
-                    },
-                    { timeout: 5000 }
-                );
+        return fetch('/api/get-location')
+            .then(response => response.json())
+            .catch(error => {
+                console.error('Error getting location:', error);
+                return {
+                    lat: 28.6129,
+                    lng: 77.2295,
+                    accuracy: 15,
+                    timestamp: new Date().toISOString()
+                };
             });
-        } else {
-            // Fallback to mock location
-            return Promise.resolve(this.getMockLocation());
-        }
-    }
-
-    getMockLocation() {
-        const baseLat = 28.6129;
-        const baseLng = 77.2295;
-        return {
-            lat: baseLat + (Math.random() - 0.5) * 0.001,
-            lng: baseLng + (Math.random() - 0.5) * 0.001,
-            accuracy: 15,
-            timestamp: new Date().toISOString()
-        };
     }
 
     getBatteryLevel() {
-        // Try to get real battery level if supported
-        if ('getBattery' in navigator) {
-            navigator.getBattery().then(battery => {
-                return Math.round(battery.level * 100);
-            });
-        }
-        // Fallback to random level for demo
         return Math.max(5, Math.floor(Math.random() * 100));
     }
 
-    initShakeDetection() {
-        if (window.DeviceMotionEvent) {
-            let lastShake = 0;
-            const shakeThreshold = 15;
-            let lastAcceleration = { x: null, y: null, z: null };
+    showVoiceFeedback(message) {
+        const feedback = document.getElementById('voiceFeedback');
+        if (feedback) {
+            feedback.innerHTML = message;
+            feedback.classList.remove('hidden');
+        }
+    }
 
-            window.addEventListener('devicemotion', (event) => {
-                const acceleration = event.accelerationIncludingGravity;
-                
-                if (lastAcceleration.x !== null) {
-                    const deltaX = Math.abs(acceleration.x - lastAcceleration.x);
-                    const deltaY = Math.abs(acceleration.y - lastAcceleration.y);
-                    const deltaZ = Math.abs(acceleration.z - lastAcceleration.z);
-                    
-                    if ((deltaX > shakeThreshold) || (deltaY > shakeThreshold) || (deltaZ > shakeThreshold)) {
-                        const now = Date.now();
-                        if (now - lastShake > 3000) { // Prevent multiple triggers within 3 seconds
-                            lastShake = now;
-                            console.log('📱 Shake detected - triggering SOS');
-                            this.showVoiceFeedback('Shake detected! Activating emergency...');
-                            setTimeout(() => {
-                                this.triggerEmergencySOS('shake');
-                            }, 500);
-                        }
-                    }
-                }
-                lastAcceleration = acceleration;
-            });
+    hideVoiceFeedback() {
+        const feedback = document.getElementById('voiceFeedback');
+        if (feedback) {
+            feedback.classList.add('hidden');
         }
     }
 
@@ -339,21 +364,6 @@ class PhoenixSafetyApp {
         window.addEventListener('offline', () => {
             this.updateConnectionStatus(false);
         });
-    }
-
-    showVoiceFeedback(message) {
-        const feedback = document.getElementById('voiceFeedback');
-        if (feedback) {
-            feedback.innerHTML = `<i class="fas fa-circle text-red-500 animate-pulse mr-2"></i><span>${message}</span>`;
-            feedback.classList.remove('hidden');
-        }
-    }
-
-    hideVoiceFeedback() {
-        const feedback = document.getElementById('voiceFeedback');
-        if (feedback) {
-            feedback.classList.add('hidden');
-        }
     }
 
     updateConnectionStatus(online) {
@@ -383,7 +393,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 overlay.classList.add('hidden');
             }
             
-            // Send cancel notification
             fetch('/api/cancel-emergency', {
                 method: 'POST',
                 headers: {
@@ -394,7 +403,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     emergency_id: 'current'
                 })
             }).catch(error => {
-                console.log('Cancel request failed (offline mode)');
+                console.log('Cancel request failed');
             });
         });
     }
@@ -408,12 +417,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 const newBattery = currentBattery - 1;
                 batteryElement.textContent = newBattery + '%';
                 
-                // Update low battery warning
                 if (newBattery < 20) {
                     batteryElement.classList.remove('text-green-500');
                     batteryElement.classList.add('text-red-500');
                     
-                    // Send low battery alert
                     fetch('/api/update-battery', {
                         method: 'POST',
                         headers: {
@@ -422,9 +429,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         body: JSON.stringify({
                             battery_level: newBattery
                         })
-                    }).catch(() => {
-                        // Ignore errors in demo
-                    });
+                    }).catch(() => {});
                 }
             }
         }
