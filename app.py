@@ -4,7 +4,10 @@ import json
 import random
 import os
 
-app = Flask(__name__, static_folder='static')
+app = Flask(__name__, 
+    static_folder='static',
+    static_url_path='/static'
+)
 
 # Vercel-specific configuration
 app.config.update(
@@ -15,7 +18,24 @@ app.config.update(
     PREFERRED_URL_SCHEME='https'
 )
 
-# Your existing database class (keep it exactly as before)
+# Add explicit static file routes for Vercel
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return send_from_directory('static', filename)
+
+@app.route('/static/images/<path:filename>')
+def serve_images(filename):
+    return send_from_directory('static/images', filename)
+
+@app.route('/static/js/<path:filename>')
+def serve_js(filename):
+    return send_from_directory('static/js', filename)
+
+@app.route('/static/css/<path:filename>')
+def serve_css(filename):
+    return send_from_directory('static/css', filename)
+
+# Your existing database class
 class SafetyDatabase:
     def __init__(self):
         self.incidents = []
@@ -40,19 +60,69 @@ class SafetyDatabase:
                 'battery_level': 85
             }
         }
-        self.initialize_safety_scores()
         self.products = [
             {
                 'id': 1,
                 'name': 'Smart Safety Bracelet',
                 'description': 'Waterproof bracelet with SOS button and GPS tracking',
                 'price': 1299,
+                'image': '/static/images/bracelet.jpg',
                 'category': 'wearables',
                 'features': ['SOS Button', 'GPS Tracking', 'Waterproof', '30-day battery'],
                 'icon': 'heartbeat'
             },
-            # ... add other products
+            {
+                'id': 2,
+                'name': 'Self-Defense Keychain',
+                'description': 'Compact personal alarm with 130dB siren and strobe light',
+                'price': 599,
+                'image': '/static/images/keychain.jpg',
+                'category': 'defense',
+                'features': ['130dB Alarm', 'Strobe Light', 'Keychain Design', 'Easy to Carry'],
+                'icon': 'shield-alt'
+            },
+            {
+                'id': 3,
+                'name': 'Safety Pendant',
+                'description': 'Elegant necklace with hidden SOS button and fall detection',
+                'price': 1599,
+                'image': '/static/images/pendant.jpg',
+                'category': 'wearables',
+                'features': ['Hidden SOS', 'Fall Detection', 'Elegant Design', 'GPS Enabled'],
+                'icon': 'gem'
+            },
+            {
+                'id': 4,
+                'name': 'Pepper Spray',
+                'description': 'Legal self-defense spray with safety lock and quick release',
+                'price': 399,
+                'image': '/static/images/pepper-spray.jpg',
+                'category': 'defense',
+                'features': ['Legal Formula', 'Safety Lock', 'Quick Release', 'Compact Size'],
+                'icon': 'spray-can'
+            },
+            {
+                'id': 5,
+                'name': 'Phoenix Hoodie',
+                'description': 'Comfortable hoodie with safety features and reflective strips',
+                'price': 1499,
+                'image': '/static/images/hoodie.jpg',
+                'category': 'apparel',
+                'features': ['Reflective Strips', 'Comfortable', 'Safety Features', 'Premium Quality'],
+                'icon': 'tshirt'
+            },
+            {
+                'id': 6,
+                'name': 'Personal Alarm',
+                'description': 'Loud personal safety alarm with pin activation',
+                'price': 299,
+                'image': '/static/images/alarm.jpg',
+                'category': 'defense',
+                'features': ['Loud Alarm', 'Pin Activation', 'Compact', 'Easy to Use'],
+                'icon': 'bell'
+            }
         ]
+        self.initialize_safety_scores()
     
     def initialize_safety_scores(self):
         campus_locations = {
@@ -95,7 +165,7 @@ class SafetyDatabase:
 # Initialize database
 db = SafetyDatabase()
 
-# Your existing routes (keep ALL routes exactly as they are)
+# Your existing routes (keep them exactly as they are)
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -166,7 +236,7 @@ def shop():
 def safewalk():
     return render_template('safewalk.html')
 
-# API Routes (keep ALL your existing API routes)
+# Your existing API routes (keep them exactly as they are)
 @app.route('/api/trigger-emergency', methods=['POST'])
 def trigger_emergency():
     data = request.json
@@ -250,6 +320,12 @@ def get_location():
     }
     return jsonify(location)
 
+@app.route('/api/update-battery', methods=['POST'])
+def update_battery():
+    data = request.json
+    battery_level = data.get('battery_level', 85)
+    return jsonify({'status': 'success', 'battery_level': battery_level})
+
 # Health check endpoint
 @app.route('/health')
 def health_check():
@@ -260,10 +336,6 @@ def health_check():
         'environment': 'Vercel'
     })
 
-@app.route('/static/<path:path>')
-def serve_static(path):
-    return send_from_directory('static', path)
-
 # Error handlers
 @app.errorhandler(404)
 def not_found(error):
@@ -273,6 +345,31 @@ def not_found(error):
 def internal_error(error):
     return render_template('500.html'), 500
 
+# Test route to verify static files are working
+@app.route('/test-images')
+def test_images():
+    """Test route to verify images are accessible"""
+    images = [
+        '/static/images/bracelet.jpg',
+        '/static/images/keychain.jpg', 
+        '/static/images/pendant.jpg',
+        '/static/images/pepper-spray.jpg',
+        '/static/images/hoodie.jpg',
+        '/static/images/alarm.jpg'
+    ]
+    
+    results = []
+    for img_path in images:
+        results.append({
+            'path': img_path,
+            'exists': os.path.exists(img_path.replace('/static/', 'static/'))
+        })
+    
+    return jsonify({
+        'static_folder': app.static_folder,
+        'static_url_path': app.static_url_path,
+        'image_test_results': results
+    })
 
 # This is important for Vercel - don't use app.run()
 if __name__ == '__main__':
